@@ -1,0 +1,6 @@
+{
+  "name": "Acompanhamento de Campanhas",
+  "description": "Sistema de gestão e acompanhamento de tarefas de campanhas para DPaschoal, DPK e AutoZ com cálculo automático de prazos, filtros e dashboard analítico.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
