@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { getHierarchyRenderItems } from '../utils/taskHierarchy';
 import { compareTaskNumbers } from '../utils/taskSort';
+import { compareMonthsChronological } from '../utils/monthUtils';
 
 interface TaskTableProps {
   tasks: Task[];
@@ -111,6 +112,10 @@ export const TaskTable: React.FC<TaskTableProps> = ({
       sourceTasks.sort((a, b) => {
         if (sortColumn === 'taskNumber') {
           const comp = compareTaskNumbers(a.taskNumber, b.taskNumber);
+          return sortDirection === 'asc' ? comp : -comp;
+        }
+        if (sortColumn === 'month') {
+          const comp = compareMonthsChronological(a.month, b.month, a.startDate, b.startDate);
           return sortDirection === 'asc' ? comp : -comp;
         }
         let valA: any = a[sortColumn];

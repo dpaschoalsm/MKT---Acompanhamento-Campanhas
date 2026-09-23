@@ -82,10 +82,10 @@ export function getHierarchyRenderItems(
   const subtasksMap = new Map<string, Task[]>();
   const parentMap = new Map<string, Task>();
 
-  // Pass 1: map parents and subtasks by campaign and root number
+  // Pass 1: map parents and subtasks by month, campaign and root number
   sortedTasks.forEach((task) => {
     const parsed = parseTaskNumber(task.taskNumber);
-    const key = `${task.campaign}:::${parsed.root}`;
+    const key = `${task.month}:::${task.campaign}:::${parsed.root}`;
 
     if (parsed.isSubtask) {
       if (!subtasksMap.has(key)) {
@@ -118,7 +118,7 @@ export function getHierarchyRenderItems(
 
   sortedTasks.forEach((task) => {
     const parsed = parseTaskNumber(task.taskNumber);
-    const key = `${task.campaign}:::${parsed.root}`;
+    const key = `${task.month}:::${task.campaign}:::${parsed.root}`;
     const subtasks = subtasksMap.get(key) || [];
 
     // Is this a parent task with at least one subtask?

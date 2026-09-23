@@ -95,7 +95,7 @@ export async function fetchCampaignsFromSupabase(): Promise<string[]> {
   const { data, error } = await client
     .from('campaigns')
     .select('name')
-    .order('name', { ascending: true });
+    .order('created_at', { ascending: true });
 
   if (error) {
     console.error('Error fetching campaigns from Supabase:', error);

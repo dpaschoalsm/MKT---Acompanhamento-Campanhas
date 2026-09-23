@@ -1,4 +1,5 @@
 import { Task } from '../types';
+import { compareMonthsChronological } from './monthUtils';
 
 /**
  * Extracts numeric sequence from taskNumber, e.g.:
@@ -76,10 +77,11 @@ export function extractIdNumber(id?: string): number {
 /**
  * Sorts tasks in canonical order:
  * 1. Company (DPaschoal, DPK, AutoZ)
- * 2. Campaign (respecting campaign order if provided)
- * 3. Natural Task Number (1, 2, 2.1, 2.2, 3, ..., 9, 10, 16)
- * 4. Start Date
- * 5. ID Number (e.g. dp-1 < dp-2 < dp-10)
+ * 2. Month (Chronological calendar order: Setembro/26 < Outubro/26 < Novembro/26 < Dezembro/26)
+ * 3. Campaign (respecting campaign order if provided or alphabetical)
+ * 4. Natural Task Number (1, 2, 2.1, 2.2, 3, ..., 9, 10, 16)
+ * 5. Start Date (chronological)
+ * 6. ID Number (e.g. dp-1 < dp-2 < dp-10)
  */
 export function sortTasks(tasks: Task[], campaignsOrder?: string[]): Task[] {
   return [...tasks].sort((a, b) => {
@@ -88,7 +90,11 @@ export function sortTasks(tasks: Task[], campaignsOrder?: string[]): Task[] {
       return String(a.company).localeCompare(String(b.company));
     }
 
-    // 2. Campaign
+    // 2. Month (Strictly chronological: Outubro/26 < Novembro/26 < Dezembro/26)
+    const monthComp = compareMonthsChronological(a.month, b.month, a.startDate, b.startDate);
+    if (monthComp !== 0) return monthComp;
+
+    // 3. Campaign
     if (a.campaign !== b.campaign) {
       if (campaignsOrder && campaignsOrder.length > 0) {
         const idxA = campaignsOrder.indexOf(a.campaign);
@@ -105,16 +111,16 @@ export function sortTasks(tasks: Task[], campaignsOrder?: string[]): Task[] {
       if (campComp !== 0) return campComp;
     }
 
-    // 3. Task Number (natural hierarchical order)
+    // 4. Task Number (natural hierarchical order)
     const numComp = compareTaskNumbers(a.taskNumber, b.taskNumber);
     if (numComp !== 0) return numComp;
 
-    // 4. Start Date (chronological)
+    // 5. Start Date (chronological)
     if (a.startDate && b.startDate && a.startDate !== b.startDate) {
       return a.startDate.localeCompare(b.startDate);
     }
 
-    // 5. ID Number (e.g. dp-1 < dp-2 < dp-10)
+    // 6. ID Number (e.g. dp-1 < dp-2 < dp-10)
     const idA = extractIdNumber(a.id);
     const idB = extractIdNumber(b.id);
     if (idA !== idB) return idA - idB;
@@ -122,3 +128,4 @@ export function sortTasks(tasks: Task[], campaignsOrder?: string[]): Task[] {
     return String(a.id).localeCompare(String(b.id));
   });
 }
+

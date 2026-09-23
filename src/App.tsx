@@ -30,6 +30,7 @@ import {
   subscribeToSupabaseRealtime
 } from './services/supabaseService';
 import { sortTasks } from './utils/taskSort';
+import { sortMonthsChronological } from './utils/monthUtils';
 
 const STORAGE_KEY_TASKS = 'dpaschoal_tasks_v7';
 const STORAGE_KEY_CAMPAIGNS = 'dpaschoal_campaigns_v7';
@@ -212,13 +213,13 @@ export default function App() {
     return sortTasks(list, campaigns);
   }, [tasks, activeCompany, campaigns]);
 
-  // Available unique months in company tasks
+  // Available unique months in company tasks (ordered chronologically: Setembro < Outubro < Novembro < Dezembro)
   const availableMonths = useMemo(() => {
     const set = new Set<string>();
     companyTasks.forEach((t) => {
       if (t.month) set.add(t.month);
     });
-    return Array.from(set).sort();
+    return sortMonthsChronological(Array.from(set));
   }, [companyTasks]);
 
   // Filtered tasks for the active company
