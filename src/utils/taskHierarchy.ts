@@ -1,4 +1,5 @@
 import { Task } from '../types';
+import { sortTasks, compareTaskNumbers } from './taskSort';
 
 export interface ParsedTaskNumber {
   root: string;
@@ -21,7 +22,7 @@ export function parseTaskNumber(numStr?: string): ParsedTaskNumber {
   const trimmed = String(numStr).trim();
 
   // Match e.g. "2.1", "2.2", "15.3", "3.3.1"
-  const subMatch = trimmed.match(/^(\d+)\.([1-9].*)$/);
+  const subMatch = trimmed.match(/^(\d+)\.([0-9]*[1-9].*)$/);
   if (subMatch) {
     return {
       root: subMatch[1],
@@ -68,17 +69,21 @@ export type HierarchyRenderItem =
  */
 export function getHierarchyRenderItems(
   tasks: Task[],
-  expandedGroupKeys: Set<string>
+  expandedGroupKeys: Set<string>,
+  campaignsOrder?: string[]
 ): {
   renderItems: HierarchyRenderItem[];
   parentGroupKeys: string[];
   totalSubtasksCount: number;
 } {
+  // Sort tasks canonically: Campaign -> Task Number (1, 2, 2.1, 3 ... 9, 10, 16) -> Date -> ID
+  const sortedTasks = sortTasks(tasks, campaignsOrder);
+
   const subtasksMap = new Map<string, Task[]>();
   const parentMap = new Map<string, Task>();
 
   // Pass 1: map parents and subtasks by campaign and root number
-  tasks.forEach((task) => {
+  sortedTasks.forEach((task) => {
     const parsed = parseTaskNumber(task.taskNumber);
     const key = `${task.campaign}:::${parsed.root}`;
 
@@ -92,6 +97,11 @@ export function getHierarchyRenderItems(
     }
   });
 
+  // Sort all subtasks collections naturally
+  subtasksMap.forEach((subtasksList) => {
+    subtasksList.sort((a, b) => compareTaskNumbers(a.taskNumber, b.taskNumber));
+  });
+
   const parentGroupKeys: string[] = [];
   let totalSubtasksCount = 0;
 
@@ -102,11 +112,11 @@ export function getHierarchyRenderItems(
     }
   });
 
-  // Pass 2: assemble ordered render items
+  // Pass 2: assemble ordered render items from sortedTasks
   const renderItems: HierarchyRenderItem[] = [];
   const renderedSubtaskIds = new Set<string>();
 
-  tasks.forEach((task) => {
+  sortedTasks.forEach((task) => {
     const parsed = parseTaskNumber(task.taskNumber);
     const key = `${task.campaign}:::${parsed.root}`;
     const subtasks = subtasksMap.get(key) || [];

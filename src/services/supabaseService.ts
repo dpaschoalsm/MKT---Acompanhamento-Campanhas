@@ -1,5 +1,6 @@
 import { Task, Company, TaskStatus, Responsible, Sector } from '../types';
 import { getSupabaseClient } from '../utils/supabaseClient';
+import { sortTasks } from '../utils/taskSort';
 
 export function dbRowToTask(row: any): Task {
   return {
@@ -64,7 +65,7 @@ export function taskToDbRow(task: Task): Record<string, any> {
 }
 
 /**
- * Loads all tasks from Supabase ordered by campaign and task_number.
+ * Loads all tasks from Supabase ordered naturally by company, campaign and task_number.
  */
 export async function fetchTasksFromSupabase(): Promise<Task[]> {
   const client = getSupabaseClient();
@@ -72,8 +73,7 @@ export async function fetchTasksFromSupabase(): Promise<Task[]> {
 
   const { data, error } = await client
     .from('tasks')
-    .select('*')
-    .order('created_at', { ascending: true });
+    .select('*');
 
   if (error) {
     console.error('Error fetching tasks from Supabase:', error);
@@ -81,7 +81,8 @@ export async function fetchTasksFromSupabase(): Promise<Task[]> {
   }
 
   if (!data) return [];
-  return data.map(dbRowToTask);
+  const tasks = data.map(dbRowToTask);
+  return sortTasks(tasks);
 }
 
 /**

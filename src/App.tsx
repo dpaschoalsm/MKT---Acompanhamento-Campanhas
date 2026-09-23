@@ -29,6 +29,7 @@ import {
   deleteCampaignFromSupabase,
   subscribeToSupabaseRealtime
 } from './services/supabaseService';
+import { sortTasks } from './utils/taskSort';
 
 const STORAGE_KEY_TASKS = 'dpaschoal_tasks_v7';
 const STORAGE_KEY_CAMPAIGNS = 'dpaschoal_campaigns_v7';
@@ -113,7 +114,7 @@ export default function App() {
     fetchTasksFromSupabase()
       .then(async (remoteTasks) => {
         if (remoteTasks && remoteTasks.length > 0) {
-          setTasks(remoteTasks);
+          setTasks(sortTasks(remoteTasks, campaigns));
         } else {
           // If remote table has 0 tasks, populate with initial data
           await upsertTasksBatchToSupabase(tasks);
@@ -146,12 +147,15 @@ export default function App() {
           if (task) {
             setTasks((prev) => {
               const idx = prev.findIndex((t) => t.id === task.id);
+              let nextList: Task[];
               if (idx >= 0) {
                 const copy = [...prev];
                 copy[idx] = task;
-                return copy;
+                nextList = copy;
+              } else {
+                nextList = [task, ...prev];
               }
-              return [task, ...prev];
+              return sortTasks(nextList, campaigns);
             });
           }
         } else if (eventType === 'DELETE' && oldId) {
@@ -204,8 +208,9 @@ export default function App() {
 
   // Tasks for the active company
   const companyTasks = useMemo(() => {
-    return tasks.filter((t) => t.company === activeCompany);
-  }, [tasks, activeCompany]);
+    const list = tasks.filter((t) => t.company === activeCompany);
+    return sortTasks(list, campaigns);
+  }, [tasks, activeCompany, campaigns]);
 
   // Available unique months in company tasks
   const availableMonths = useMemo(() => {
@@ -218,7 +223,7 @@ export default function App() {
 
   // Filtered tasks for the active company
   const filteredTasks = useMemo(() => {
-    return companyTasks.filter((task) => {
+    const filtered = companyTasks.filter((task) => {
       if (filters.campaign && task.campaign !== filters.campaign) return false;
       if (filters.responsible) {
         const rLower = filters.responsible.toLowerCase();
@@ -241,7 +246,8 @@ export default function App() {
       }
       return true;
     });
-  }, [companyTasks, filters]);
+    return sortTasks(filtered, campaigns);
+  }, [companyTasks, filters, campaigns]);
 
   // Statistics for active company (all vs filtered)
   const totalCompanyTasks = companyTasks.length;

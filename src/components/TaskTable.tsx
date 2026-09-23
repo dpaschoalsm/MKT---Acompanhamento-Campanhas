@@ -22,9 +22,13 @@ import {
   ChevronRight,
   Trash2, 
   Plus,
-  Check
+  Check,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
 import { getHierarchyRenderItems } from '../utils/taskHierarchy';
+import { compareTaskNumbers } from '../utils/taskSort';
 
 interface TaskTableProps {
   tasks: Task[];
@@ -47,6 +51,20 @@ type CellField =
   | 'completionDate'
   | 'status';
 
+type SortColumn = 
+  | 'month'
+  | 'campaign'
+  | 'taskNumber'
+  | 'description'
+  | 'responsible'
+  | 'sector'
+  | 'durationDays'
+  | 'startDate'
+  | 'endDate'
+  | 'completionDate'
+  | 'diffDays'
+  | 'status';
+
 export const TaskTable: React.FC<TaskTableProps> = ({
   tasks,
   campaigns,
@@ -59,6 +77,10 @@ export const TaskTable: React.FC<TaskTableProps> = ({
   const [activeCell, setActiveCell] = useState<{ taskId: string; field: CellField } | null>(null);
   const [editValue, setEditValue] = useState<string>('');
 
+  // Column sort state: null means canonical default natural hierarchy (1, 2, 2.1, 3 ... 9, 10, 16)
+  const [sortColumn, setSortColumn] = useState<SortColumn | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
   // Multi-select popovers for Quick Add row
   const [quickAddRespOpen, setQuickAddRespOpen] = useState(false);
   const [quickAddSectorOpen, setQuickAddSectorOpen] = useState(false);
@@ -67,10 +89,45 @@ export const TaskTable: React.FC<TaskTableProps> = ({
   // Initialized empty so only parent tasks (e.g. 2) appear, and clicking opens subtasks (2.1, 2.2...)
   const [expandedGroupKeys, setExpandedGroupKeys] = useState<Set<string>>(new Set());
 
-  // Compute hierarchical render list: groups subtasks under parent tasks
+  const handleHeaderSort = (column: SortColumn) => {
+    if (sortColumn === column) {
+      if (sortDirection === 'asc') {
+        setSortDirection('desc');
+      } else {
+        // Reset to canonical natural order
+        setSortColumn(null);
+        setSortDirection('asc');
+      }
+    } else {
+      setSortColumn(column);
+      setSortDirection('asc');
+    }
+  };
+
+  // Compute hierarchical render list: groups subtasks under parent tasks in canonical order
   const { renderItems } = useMemo(() => {
-    return getHierarchyRenderItems(tasks, expandedGroupKeys);
-  }, [tasks, expandedGroupKeys]);
+    let sourceTasks = [...tasks];
+    if (sortColumn) {
+      sourceTasks.sort((a, b) => {
+        if (sortColumn === 'taskNumber') {
+          const comp = compareTaskNumbers(a.taskNumber, b.taskNumber);
+          return sortDirection === 'asc' ? comp : -comp;
+        }
+        let valA: any = a[sortColumn];
+        let valB: any = b[sortColumn];
+        if (valA === undefined || valA === null) valA = '';
+        if (valB === undefined || valB === null) valB = '';
+        let comp = 0;
+        if (typeof valA === 'number' && typeof valB === 'number') {
+          comp = valA - valB;
+        } else {
+          comp = String(valA).localeCompare(String(valB));
+        }
+        return sortDirection === 'asc' ? comp : -comp;
+      });
+    }
+    return getHierarchyRenderItems(sourceTasks, expandedGroupKeys, campaigns);
+  }, [tasks, expandedGroupKeys, campaigns, sortColumn, sortDirection]);
 
   const toggleGroup = (key: string) => {
     setExpandedGroupKeys((prev) => {
@@ -267,76 +324,172 @@ export const TaskTable: React.FC<TaskTableProps> = ({
           {/* Header row in authentic DPaschoal Red */}
           <thead>
             <tr className="bg-[#a60000] text-white text-xs font-black tracking-wider uppercase select-none border-b-2 border-red-950">
-              <th className="py-2.5 px-3 border-r border-red-900/60 text-center w-28">
+              <th 
+                onClick={() => handleHeaderSort('month')}
+                className="py-2.5 px-3 border-r border-red-900/60 text-center w-28 cursor-pointer hover:bg-red-800 transition-colors"
+                title="Clique para ordenar por Mês"
+              >
                 <div className="flex items-center justify-center gap-1">
                   <span>MÊS</span>
-                  <ChevronDown className="w-3 h-3 text-red-200" />
+                  {sortColumn === 'month' ? (
+                    sortDirection === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-amber-300" /> : <ArrowDown className="w-3.5 h-3.5 text-amber-300" />
+                  ) : (
+                    <ArrowUpDown className="w-3 h-3 text-red-200/40" />
+                  )}
                 </div>
               </th>
-              <th className="py-2.5 px-3 border-r border-red-900/60 text-center w-36">
+              <th 
+                onClick={() => handleHeaderSort('campaign')}
+                className="py-2.5 px-3 border-r border-red-900/60 text-center w-36 cursor-pointer hover:bg-red-800 transition-colors"
+                title="Clique para ordenar por Campanha"
+              >
                 <div className="flex items-center justify-center gap-1">
                   <span>CAMPANHA</span>
-                  <ChevronDown className="w-3 h-3 text-red-200" />
+                  {sortColumn === 'campaign' ? (
+                    sortDirection === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-amber-300" /> : <ArrowDown className="w-3.5 h-3.5 text-amber-300" />
+                  ) : (
+                    <ArrowUpDown className="w-3 h-3 text-red-200/40" />
+                  )}
                 </div>
               </th>
-              <th className="py-2.5 px-2.5 border-r border-red-900/60 text-center w-14">
+              <th 
+                onClick={() => handleHeaderSort('taskNumber')}
+                className="py-2.5 px-2.5 border-r border-red-900/60 text-center w-14 cursor-pointer hover:bg-red-800 transition-colors"
+                title="Clique para ordenar por Nº da tarefa (1, 2, 2.1...)"
+              >
                 <div className="flex items-center justify-center gap-1">
                   <span>Nº</span>
-                  <ChevronDown className="w-3 h-3 text-red-200" />
+                  {sortColumn === 'taskNumber' ? (
+                    sortDirection === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-amber-300" /> : <ArrowDown className="w-3.5 h-3.5 text-amber-300" />
+                  ) : (
+                    <ArrowUpDown className="w-3 h-3 text-red-200/40" />
+                  )}
                 </div>
               </th>
-              <th className="py-2.5 px-4 border-r border-red-900/60 min-w-[280px]">
+              <th 
+                onClick={() => handleHeaderSort('description')}
+                className="py-2.5 px-4 border-r border-red-900/60 min-w-[280px] cursor-pointer hover:bg-red-800 transition-colors"
+                title="Clique para ordenar por Descrição da Tarefa"
+              >
                 <div className="flex items-center justify-between">
                   <span>TAREFA</span>
-                  <ChevronDown className="w-3 h-3 text-red-200" />
+                  {sortColumn === 'description' ? (
+                    sortDirection === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-amber-300" /> : <ArrowDown className="w-3.5 h-3.5 text-amber-300" />
+                  ) : (
+                    <ArrowUpDown className="w-3 h-3 text-red-200/40" />
+                  )}
                 </div>
               </th>
-              <th className="py-2.5 px-3 border-r border-red-900/60 text-center w-32">
+              <th 
+                onClick={() => handleHeaderSort('responsible')}
+                className="py-2.5 px-3 border-r border-red-900/60 text-center w-32 cursor-pointer hover:bg-red-800 transition-colors"
+                title="Clique para ordenar por Responsável"
+              >
                 <div className="flex items-center justify-center gap-1">
                   <span>RESPONSÁVEL</span>
-                  <ChevronDown className="w-3 h-3 text-red-200" />
+                  {sortColumn === 'responsible' ? (
+                    sortDirection === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-amber-300" /> : <ArrowDown className="w-3.5 h-3.5 text-amber-300" />
+                  ) : (
+                    <ArrowUpDown className="w-3 h-3 text-red-200/40" />
+                  )}
                 </div>
               </th>
-              <th className="py-2.5 px-3 border-r border-red-900/60 text-center w-40">
+              <th 
+                onClick={() => handleHeaderSort('sector')}
+                className="py-2.5 px-3 border-r border-red-900/60 text-center w-40 cursor-pointer hover:bg-red-800 transition-colors"
+                title="Clique para ordenar por Setor"
+              >
                 <div className="flex items-center justify-center gap-1">
                   <span>SETOR</span>
-                  <ChevronDown className="w-3 h-3 text-red-200" />
+                  {sortColumn === 'sector' ? (
+                    sortDirection === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-amber-300" /> : <ArrowDown className="w-3.5 h-3.5 text-amber-300" />
+                  ) : (
+                    <ArrowUpDown className="w-3 h-3 text-red-200/40" />
+                  )}
                 </div>
               </th>
-              <th className="py-2.5 px-2.5 border-r border-red-900/60 text-center w-24">
+              <th 
+                onClick={() => handleHeaderSort('durationDays')}
+                className="py-2.5 px-2.5 border-r border-red-900/60 text-center w-24 cursor-pointer hover:bg-red-800 transition-colors"
+                title="Clique para ordenar por Duração (dias)"
+              >
                 <div className="flex items-center justify-center gap-1">
                   <span>DURAÇÃO</span>
-                  <ChevronDown className="w-3 h-3 text-red-200" />
+                  {sortColumn === 'durationDays' ? (
+                    sortDirection === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-amber-300" /> : <ArrowDown className="w-3.5 h-3.5 text-amber-300" />
+                  ) : (
+                    <ArrowUpDown className="w-3 h-3 text-red-200/40" />
+                  )}
                 </div>
               </th>
-              <th className="py-2.5 px-3 border-r border-red-900/60 text-center w-28">
+              <th 
+                onClick={() => handleHeaderSort('startDate')}
+                className="py-2.5 px-3 border-r border-red-900/60 text-center w-28 cursor-pointer hover:bg-red-800 transition-colors"
+                title="Clique para ordenar por Data de Início"
+              >
                 <div className="flex items-center justify-center gap-1">
                   <span>DT. ÍNICIO</span>
-                  <ChevronDown className="w-3 h-3 text-red-200" />
+                  {sortColumn === 'startDate' ? (
+                    sortDirection === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-amber-300" /> : <ArrowDown className="w-3.5 h-3.5 text-amber-300" />
+                  ) : (
+                    <ArrowUpDown className="w-3 h-3 text-red-200/40" />
+                  )}
                 </div>
               </th>
-              <th className="py-2.5 px-3 border-r border-red-900/60 text-center w-28">
+              <th 
+                onClick={() => handleHeaderSort('endDate')}
+                className="py-2.5 px-3 border-r border-red-900/60 text-center w-28 cursor-pointer hover:bg-red-800 transition-colors"
+                title="Clique para ordenar por Data Final Prevista"
+              >
                 <div className="flex items-center justify-center gap-1">
                   <span>DT. FINAL</span>
-                  <ChevronDown className="w-3 h-3 text-red-200" />
+                  {sortColumn === 'endDate' ? (
+                    sortDirection === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-amber-300" /> : <ArrowDown className="w-3.5 h-3.5 text-amber-300" />
+                  ) : (
+                    <ArrowUpDown className="w-3 h-3 text-red-200/40" />
+                  )}
                 </div>
               </th>
-              <th className="py-2.5 px-3 border-r border-red-900/60 text-center w-28">
+              <th 
+                onClick={() => handleHeaderSort('completionDate')}
+                className="py-2.5 px-3 border-r border-red-900/60 text-center w-28 cursor-pointer hover:bg-red-800 transition-colors"
+                title="Clique para ordenar por Data de Conclusão Real"
+              >
                 <div className="flex items-center justify-center gap-1">
                   <span>CONCLUSÃO</span>
-                  <ChevronDown className="w-3 h-3 text-red-200" />
+                  {sortColumn === 'completionDate' ? (
+                    sortDirection === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-amber-300" /> : <ArrowDown className="w-3.5 h-3.5 text-amber-300" />
+                  ) : (
+                    <ArrowUpDown className="w-3 h-3 text-red-200/40" />
+                  )}
                 </div>
               </th>
-              <th className="py-2.5 px-2.5 border-r border-red-900/60 text-center w-24">
+              <th 
+                onClick={() => handleHeaderSort('diffDays')}
+                className="py-2.5 px-2.5 border-r border-red-900/60 text-center w-24 cursor-pointer hover:bg-red-800 transition-colors"
+                title="Clique para ordenar por Dias de Diferença (+/-)"
+              >
                 <div className="flex items-center justify-center gap-1">
                   <span>DIAS (+/-)</span>
-                  <ChevronDown className="w-3 h-3 text-red-200" />
+                  {sortColumn === 'diffDays' ? (
+                    sortDirection === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-amber-300" /> : <ArrowDown className="w-3.5 h-3.5 text-amber-300" />
+                  ) : (
+                    <ArrowUpDown className="w-3 h-3 text-red-200/40" />
+                  )}
                 </div>
               </th>
-              <th className="py-2.5 px-3 border-r border-red-900/60 text-center w-36">
+              <th 
+                onClick={() => handleHeaderSort('status')}
+                className="py-2.5 px-3 border-r border-red-900/60 text-center w-36 cursor-pointer hover:bg-red-800 transition-colors"
+                title="Clique para ordenar por Status"
+              >
                 <div className="flex items-center justify-center gap-1">
                   <span>STATUS</span>
-                  <ChevronDown className="w-3 h-3 text-red-200" />
+                  {sortColumn === 'status' ? (
+                    sortDirection === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-amber-300" /> : <ArrowDown className="w-3.5 h-3.5 text-amber-300" />
+                  ) : (
+                    <ArrowUpDown className="w-3 h-3 text-red-200/40" />
+                  )}
                 </div>
               </th>
               <th className="py-2.5 px-2 text-center w-14 bg-red-950/40">
