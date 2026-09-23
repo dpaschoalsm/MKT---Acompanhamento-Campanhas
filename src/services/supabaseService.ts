@@ -31,25 +31,35 @@ export function dbRowToTask(row: any): Task {
   };
 }
 
+export interface SupabaseOpResult {
+  success: boolean;
+  error?: string;
+}
+
 export function taskToDbRow(task: Task): Record<string, any> {
+  let validCreatedAt = new Date().toISOString();
+  if (task.createdAt && !isNaN(Date.parse(task.createdAt))) {
+    validCreatedAt = new Date(task.createdAt).toISOString();
+  }
+
   return {
-    id: task.id,
-    company: task.company,
-    month: task.month,
-    campaign: task.campaign,
-    task_number: task.taskNumber,
-    description: task.description,
-    responsible: task.responsible,
-    sector: task.sector,
-    duration_days: task.durationDays,
-    start_date: task.startDate,
-    end_date: task.endDate,
+    id: String(task.id),
+    company: task.company || 'DPaschoal',
+    month: task.month || '',
+    campaign: task.campaign || '',
+    task_number: task.taskNumber || '',
+    description: task.description || '',
+    responsible: task.responsible || 'Todos',
+    sector: task.sector || 'Marketing',
+    duration_days: typeof task.durationDays === 'number' && !isNaN(task.durationDays) ? task.durationDays : 5,
+    start_date: task.startDate || '',
+    end_date: task.endDate || '',
     completion_date: task.completionDate || null,
-    diff_days: task.diffDays !== undefined && task.diffDays !== null ? task.diffDays : null,
-    status: task.status,
+    diff_days: typeof task.diffDays === 'number' && !isNaN(task.diffDays) ? task.diffDays : null,
+    status: task.status || 'Não iniciado',
     notes: task.notes || null,
-    created_at: task.createdAt,
-    updated_at: task.updatedAt || new Date().toISOString(),
+    created_at: validCreatedAt,
+    updated_at: new Date().toISOString(),
   };
 }
 
@@ -117,9 +127,11 @@ export async function upsertTaskToSupabase(task: Task): Promise<boolean> {
 /**
  * Batch upserts tasks to Supabase (e.g. initial seed or sync).
  */
-export async function upsertTasksBatchToSupabase(tasks: Task[]): Promise<boolean> {
+export async function upsertTasksBatchToSupabase(tasks: Task[]): Promise<SupabaseOpResult> {
   const client = getSupabaseClient();
-  if (!client) return false;
+  if (!client) {
+    return { success: false, error: 'Credenciais do Supabase não configuradas no app.' };
+  }
 
   const rows = tasks.map(taskToDbRow);
   // Send in chunks of 50 to avoid payload limits
@@ -132,10 +144,13 @@ export async function upsertTasksBatchToSupabase(tasks: Task[]): Promise<boolean
 
     if (error) {
       console.error(`Error upserting chunk ${i}-${i + CHUNK_SIZE} to Supabase:`, error);
-      return false;
+      return { 
+        success: false, 
+        error: error.message || error.details || error.hint || 'Falha ao salvar tarefas no banco Supabase.' 
+      };
     }
   }
-  return true;
+  return { success: true };
 }
 
 /**
@@ -178,12 +193,17 @@ export async function upsertCampaignToSupabase(name: string): Promise<boolean> {
 /**
  * Batch upserts campaigns.
  */
-export async function upsertCampaignsBatchToSupabase(campaigns: string[]): Promise<boolean> {
+export async function upsertCampaignsBatchToSupabase(campaigns: string[]): Promise<SupabaseOpResult> {
   const client = getSupabaseClient();
-  if (!client) return false;
+  if (!client) {
+    return { success: false, error: 'Credenciais do Supabase não configuradas.' };
+  }
 
-  const rows = campaigns.map((name) => ({ name: name.trim() })).filter((c) => c.name);
-  if (rows.length === 0) return true;
+  const rows = campaigns
+    .map((name) => ({ name: String(name).trim() }))
+    .filter((c) => Boolean(c.name));
+
+  if (rows.length === 0) return { success: true };
 
   const { error } = await client
     .from('campaigns')
@@ -191,9 +211,12 @@ export async function upsertCampaignsBatchToSupabase(campaigns: string[]): Promi
 
   if (error) {
     console.error('Error batch upserting campaigns:', error);
-    return false;
+    return { 
+      success: false, 
+      error: error.message || error.details || error.hint || 'Falha ao salvar campanhas no banco Supabase.' 
+    };
   }
-  return true;
+  return { success: true };
 }
 
 /**
