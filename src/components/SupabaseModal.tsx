@@ -138,6 +138,9 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
       return;
     }
     saveSupabaseCredentials(urlInput.trim(), keyInput.trim());
+    const fixed = getSupabaseConfig();
+    setUrlInput(fixed.url);
+    setKeyInput(fixed.anonKey);
     await testCurrentConfig();
     if (onSyncComplete) onSyncComplete();
   };
@@ -165,7 +168,9 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
       const tasksRes = await upsertTasksBatchToSupabase(tasks);
       if (!tasksRes.success) {
         const errorMsg = tasksRes.error || '';
-        if (errorMsg.includes('does not exist') || errorMsg.includes('relation "public.tasks"')) {
+        if (errorMsg.includes('Invalid path specified in request URL')) {
+          setUploadError('A URL do Supabase está incorreta! Você provavelmente informou a URL do painel web da Supabase em vez da "Project URL" da API. A Project URL deve terminar com ".supabase.co" (exemplo: https://xxxxxxxx.supabase.co). Corrija abaixo no campo de URL e salve novamente.');
+        } else if (errorMsg.includes('does not exist') || errorMsg.includes('relation "public.tasks"')) {
           setUploadError('A tabela "tasks" ainda não existe no seu banco de dados Supabase! Acesse a aba "Script SQL (Tabelas)", copie o script e execute no SQL Editor do Supabase.');
         } else if (errorMsg.includes('policy') || errorMsg.includes('row-level security')) {
           setUploadError('Erro de permissão no Supabase (RLS). Execute o script SQL para conceder permissão de gravação à chave anon.');
@@ -178,7 +183,9 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
       const campaignsRes = await upsertCampaignsBatchToSupabase(campaigns);
       if (!campaignsRes.success) {
         const errorMsg = campaignsRes.error || '';
-        if (errorMsg.includes('does not exist') || errorMsg.includes('relation "public.campaigns"')) {
+        if (errorMsg.includes('Invalid path specified in request URL')) {
+          setUploadError('A URL do Supabase informada é inválida. Ela deve ter o formato https://xxxxxxxx.supabase.co (encontrada em Project Settings → API).');
+        } else if (errorMsg.includes('does not exist') || errorMsg.includes('relation "public.campaigns"')) {
           setUploadError('A tabela "campaigns" ainda não existe no seu banco de dados Supabase! Execute o script SQL no SQL Editor do Supabase.');
         } else {
           setUploadError(`Erro ao salvar campanhas: ${errorMsg}`);
@@ -190,7 +197,11 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
       if (onSyncComplete) onSyncComplete();
     } catch (e: any) {
       console.error(e);
-      setUploadError(e.message || 'Erro inesperado na sincronização.');
+      if (e.message && e.message.includes('Invalid path specified in request URL')) {
+        setUploadError('A URL informada é a do painel web. Copie a "Project URL" que fica em Project Settings → API (formato https://xxxxxxxx.supabase.co).');
+      } else {
+        setUploadError(e.message || 'Erro inesperado na sincronização.');
+      }
     } finally {
       setUploading(false);
     }
@@ -385,16 +396,28 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
             {/* Form */}
             <form onSubmit={handleSave} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-neutral-700 mb-1">
-                  Project URL do Supabase (VITE_SUPABASE_URL)
+                <label className="block text-xs font-bold text-neutral-700 mb-1 flex items-center justify-between">
+                  <span>Project URL do Supabase (VITE_SUPABASE_URL)</span>
+                  <span className="text-[10px] text-neutral-500 font-normal">Formato: https://xxxx.supabase.co</span>
                 </label>
                 <input
-                  type="url"
+                  type="text"
                   placeholder="https://exemplo-seu-projeto.supabase.co"
                   value={urlInput}
                   onChange={(e) => setUrlInput(e.target.value)}
                   className="w-full px-3 py-2 text-xs border border-neutral-300 rounded-lg font-mono focus:border-[#a60000] focus:ring-1 focus:ring-[#a60000] outline-none"
                 />
+                {urlInput.includes('supabase.com/dashboard/project') && (
+                  <div className="mt-1 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 p-2 rounded flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+                    <span>
+                      Você colou o link do navegador do Supabase. Não se preocupe: ao clicar em <strong>"Salvar e Conectar"</strong>, converteremos automaticamente para a URL oficial da API (terminando com <code>.supabase.co</code>).
+                    </span>
+                  </div>
+                )}
+                <span className="text-[10px] text-neutral-500 mt-1 block">
+                  Encontre em: <strong>Project Settings → API → Project URL</strong> (não copie a URL do navegador).
+                </span>
               </div>
 
               <div>
