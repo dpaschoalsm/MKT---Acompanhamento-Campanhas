@@ -1,0 +1,257 @@
+import { Task, Company, TaskStatus, Responsible, Sector } from '../types';
+import { getSupabaseClient } from '../utils/supabaseClient';
+
+export function dbRowToTask(row: any): Task {
+  return {
+    id: String(row.id),
+    company: (row.company as Company) || 'DPaschoal',
+    month: row.month || '',
+    campaign: row.campaign || '',
+    taskNumber: row.task_number || row.taskNumber || '',
+    description: row.description || '',
+    responsible: (row.responsible as Responsible) || 'Rafael',
+    sector: (row.sector as Sector) || 'Marketing',
+    durationDays: typeof row.duration_days === 'number' 
+      ? row.duration_days 
+      : typeof row.durationDays === 'number'
+        ? row.durationDays
+        : parseInt(String(row.duration_days || row.durationDays || 5), 10) || 5,
+    startDate: row.start_date || row.startDate || '',
+    endDate: row.end_date || row.endDate || '',
+    completionDate: row.completion_date || row.completionDate || '',
+    diffDays: row.diff_days !== undefined && row.diff_days !== null 
+      ? Number(row.diff_days) 
+      : row.diffDays !== undefined && row.diffDays !== null
+        ? Number(row.diffDays)
+        : null,
+    status: (row.status as TaskStatus) || 'Não iniciado',
+    notes: row.notes || '',
+    createdAt: row.created_at || row.createdAt || new Date().toISOString(),
+    updatedAt: row.updated_at || row.updatedAt || new Date().toISOString(),
+  };
+}
+
+export function taskToDbRow(task: Task): Record<string, any> {
+  return {
+    id: task.id,
+    company: task.company,
+    month: task.month,
+    campaign: task.campaign,
+    task_number: task.taskNumber,
+    description: task.description,
+    responsible: task.responsible,
+    sector: task.sector,
+    duration_days: task.durationDays,
+    start_date: task.startDate,
+    end_date: task.endDate,
+    completion_date: task.completionDate || null,
+    diff_days: task.diffDays !== undefined && task.diffDays !== null ? task.diffDays : null,
+    status: task.status,
+    notes: task.notes || null,
+    created_at: task.createdAt,
+    updated_at: task.updatedAt || new Date().toISOString(),
+  };
+}
+
+/**
+ * Loads all tasks from Supabase ordered by campaign and task_number.
+ */
+export async function fetchTasksFromSupabase(): Promise<Task[]> {
+  const client = getSupabaseClient();
+  if (!client) return [];
+
+  const { data, error } = await client
+    .from('tasks')
+    .select('*')
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching tasks from Supabase:', error);
+    throw error;
+  }
+
+  if (!data) return [];
+  return data.map(dbRowToTask);
+}
+
+/**
+ * Loads all campaigns from Supabase.
+ */
+export async function fetchCampaignsFromSupabase(): Promise<string[]> {
+  const client = getSupabaseClient();
+  if (!client) return [];
+
+  const { data, error } = await client
+    .from('campaigns')
+    .select('name')
+    .order('name', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching campaigns from Supabase:', error);
+    throw error;
+  }
+
+  if (!data || data.length === 0) return [];
+  return data.map((c: any) => c.name).filter(Boolean);
+}
+
+/**
+ * Upserts a single task in Supabase.
+ */
+export async function upsertTaskToSupabase(task: Task): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  const row = taskToDbRow(task);
+  const { error } = await client
+    .from('tasks')
+    .upsert(row, { onConflict: 'id' });
+
+  if (error) {
+    console.error('Error upserting task in Supabase:', error);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Batch upserts tasks to Supabase (e.g. initial seed or sync).
+ */
+export async function upsertTasksBatchToSupabase(tasks: Task[]): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  const rows = tasks.map(taskToDbRow);
+  // Send in chunks of 50 to avoid payload limits
+  const CHUNK_SIZE = 50;
+  for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
+    const chunk = rows.slice(i, i + CHUNK_SIZE);
+    const { error } = await client
+      .from('tasks')
+      .upsert(chunk, { onConflict: 'id' });
+
+    if (error) {
+      console.error(`Error upserting chunk ${i}-${i + CHUNK_SIZE} to Supabase:`, error);
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Deletes a task from Supabase by ID.
+ */
+export async function deleteTaskFromSupabase(taskId: string): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  const { error } = await client
+    .from('tasks')
+    .delete()
+    .eq('id', taskId);
+
+  if (error) {
+    console.error('Error deleting task from Supabase:', error);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Upserts a campaign to Supabase.
+ */
+export async function upsertCampaignToSupabase(name: string): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client || !name.trim()) return false;
+
+  const { error } = await client
+    .from('campaigns')
+    .upsert({ name: name.trim() }, { onConflict: 'name' });
+
+  if (error) {
+    console.error('Error upserting campaign to Supabase:', error);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Batch upserts campaigns.
+ */
+export async function upsertCampaignsBatchToSupabase(campaigns: string[]): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  const rows = campaigns.map((name) => ({ name: name.trim() })).filter((c) => c.name);
+  if (rows.length === 0) return true;
+
+  const { error } = await client
+    .from('campaigns')
+    .upsert(rows, { onConflict: 'name' });
+
+  if (error) {
+    console.error('Error batch upserting campaigns:', error);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Deletes a campaign from Supabase.
+ */
+export async function deleteCampaignFromSupabase(name: string): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client || !name.trim()) return false;
+
+  const { error } = await client
+    .from('campaigns')
+    .delete()
+    .eq('name', name.trim());
+
+  if (error) {
+    console.error('Error deleting campaign from Supabase:', error);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Subscribes to Realtime changes on both `tasks` and `campaigns` tables.
+ */
+export function subscribeToSupabaseRealtime(
+  onTaskChange: (payload: { eventType: 'INSERT' | 'UPDATE' | 'DELETE'; task?: Task; oldId?: string }) => void,
+  onCampaignChange: () => void
+): (() => void) | null {
+  const client = getSupabaseClient();
+  if (!client) return null;
+
+  const channel = client
+    .channel('dpaschoal-realtime-sync')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'tasks' },
+      (payload) => {
+        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+          const task = dbRowToTask(payload.new);
+          onTaskChange({ eventType: payload.eventType, task });
+        } else if (payload.eventType === 'DELETE') {
+          const oldId = payload.old?.id;
+          if (oldId) {
+            onTaskChange({ eventType: 'DELETE', oldId: String(oldId) });
+          }
+        }
+      }
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'campaigns' },
+      () => {
+        onCampaignChange();
+      }
+    )
+    .subscribe();
+
+  return () => {
+    client.removeChannel(channel);
+  };
+}

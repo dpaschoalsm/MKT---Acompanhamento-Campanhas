@@ -14,6 +14,21 @@ import { TaskTable } from './components/TaskTable';
 import { TaskModal } from './components/TaskModal';
 import { CampaignManagerModal } from './components/CampaignManagerModal';
 import { DashboardView } from './components/DashboardView';
+import { SupabaseModal } from './components/SupabaseModal';
+import { 
+  isSupabaseConfigured 
+} from './utils/supabaseClient';
+import {
+  fetchTasksFromSupabase,
+  fetchCampaignsFromSupabase,
+  upsertTaskToSupabase,
+  upsertTasksBatchToSupabase,
+  upsertCampaignsBatchToSupabase,
+  deleteTaskFromSupabase,
+  upsertCampaignToSupabase,
+  deleteCampaignFromSupabase,
+  subscribeToSupabaseRealtime
+} from './services/supabaseService';
 
 const STORAGE_KEY_TASKS = 'dpaschoal_tasks_v7';
 const STORAGE_KEY_CAMPAIGNS = 'dpaschoal_campaigns_v7';
@@ -80,8 +95,82 @@ export default function App() {
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [isCampaignModalOpen, setIsCampaignModalOpen] = useState(false);
+  const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
+  const [isSupabaseConnected, setIsSupabaseConnected] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [supabaseReloadKey, setSupabaseReloadKey] = useState(0);
 
-  // Sync to localStorage
+  // Supabase Online & Realtime Sync Effect
+  useEffect(() => {
+    const configured = isSupabaseConfigured();
+    setIsSupabaseConnected(configured);
+
+    if (!configured) return;
+
+    setIsSyncing(true);
+
+    // 1. Fetch remote tasks
+    fetchTasksFromSupabase()
+      .then(async (remoteTasks) => {
+        if (remoteTasks && remoteTasks.length > 0) {
+          setTasks(remoteTasks);
+        } else {
+          // If remote table has 0 tasks, populate with initial data
+          await upsertTasksBatchToSupabase(tasks);
+        }
+      })
+      .catch((err) => {
+        console.warn('Não foi possível carregar do Supabase (verifique se executou o SQL):', err);
+      })
+      .finally(() => {
+        setIsSyncing(false);
+      });
+
+    // 2. Fetch remote campaigns
+    fetchCampaignsFromSupabase()
+      .then(async (remoteCampaigns) => {
+        if (remoteCampaigns && remoteCampaigns.length > 0) {
+          setCampaigns(remoteCampaigns);
+        } else {
+          await upsertCampaignsBatchToSupabase(campaigns);
+        }
+      })
+      .catch((err) => {
+        console.warn('Não foi possível carregar campanhas do Supabase:', err);
+      });
+
+    // 3. Realtime subscription (Instant sync across all browser tabs / users)
+    const unsubscribe = subscribeToSupabaseRealtime(
+      ({ eventType, task, oldId }) => {
+        if (eventType === 'INSERT' || eventType === 'UPDATE') {
+          if (task) {
+            setTasks((prev) => {
+              const idx = prev.findIndex((t) => t.id === task.id);
+              if (idx >= 0) {
+                const copy = [...prev];
+                copy[idx] = task;
+                return copy;
+              }
+              return [task, ...prev];
+            });
+          }
+        } else if (eventType === 'DELETE' && oldId) {
+          setTasks((prev) => prev.filter((t) => t.id !== oldId));
+        }
+      },
+      () => {
+        fetchCampaignsFromSupabase().then((camps) => {
+          if (camps && camps.length > 0) setCampaigns(camps);
+        });
+      }
+    );
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [supabaseReloadKey]);
+
+  // Sync to localStorage as offline fallback
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY_TASKS, JSON.stringify(tasks));
@@ -205,17 +294,20 @@ export default function App() {
 
     if (existingId) {
       // Update
+      const existing = tasks.find((t) => t.id === existingId);
+      const updated: Task = {
+        ...(existing || (dataWithCompany as Task)),
+        ...dataWithCompany,
+        updatedAt: now,
+      };
+
       setTasks((prev) =>
-        prev.map((t) =>
-          t.id === existingId
-            ? {
-                ...t,
-                ...dataWithCompany,
-                updatedAt: now,
-              }
-            : t
-        )
+        prev.map((t) => (t.id === existingId ? updated : t))
       );
+
+      if (isSupabaseConfigured()) {
+        upsertTaskToSupabase(updated);
+      }
     } else {
       // Create new
       const newTask: Task = {
@@ -225,6 +317,10 @@ export default function App() {
         updatedAt: now,
       };
       setTasks((prev) => [newTask, ...prev]);
+
+      if (isSupabaseConfigured()) {
+        upsertTaskToSupabase(newTask);
+      }
     }
   };
 
@@ -236,6 +332,10 @@ export default function App() {
     const taskIndex = tasks.findIndex((t) => t.id === taskId);
     setDeletedTaskBackup({ task: taskToDelete, index: taskIndex });
     setTasks((prev) => prev.filter((t) => t.id !== taskId));
+
+    if (isSupabaseConfigured()) {
+      deleteTaskFromSupabase(taskId);
+    }
   };
 
   const handleUndoDelete = () => {
@@ -246,6 +346,10 @@ export default function App() {
         copy.splice(targetIndex, 0, deletedTaskBackup.task);
         return copy;
       });
+
+      if (isSupabaseConfigured()) {
+        upsertTaskToSupabase(deletedTaskBackup.task);
+      }
       setDeletedTaskBackup(null);
     }
   };
@@ -266,13 +370,19 @@ export default function App() {
             diffDays = null;
           }
 
-          return {
+          const updated: Task = {
             ...t,
             status: newStatus,
             completionDate: updatedCompDate,
             diffDays,
             updatedAt: new Date().toISOString(),
           };
+
+          if (isSupabaseConfigured()) {
+            upsertTaskToSupabase(updated);
+          }
+
+          return updated;
         }
         return t;
       })
@@ -333,6 +443,10 @@ export default function App() {
           }
         }
 
+        if (isSupabaseConfigured()) {
+          upsertTaskToSupabase(updated);
+        }
+
         return updated;
       })
     );
@@ -355,17 +469,27 @@ export default function App() {
     };
     // Append to end of task list so user can see it right above the new empty row
     setTasks((prev) => [...prev, newTask]);
+
+    if (isSupabaseConfigured()) {
+      upsertTaskToSupabase(newTask);
+    }
   };
 
   // Handlers for Campaign Management
   const handleAddCampaign = (name: string) => {
     if (!campaigns.includes(name)) {
       setCampaigns((prev) => [...prev, name]);
+      if (isSupabaseConfigured()) {
+        upsertCampaignToSupabase(name);
+      }
     }
   };
 
   const handleDeleteCampaign = (name: string) => {
     setCampaigns((prev) => prev.filter((c) => c !== name));
+    if (isSupabaseConfigured()) {
+      deleteCampaignFromSupabase(name);
+    }
   };
 
   // CSV Export
@@ -435,6 +559,9 @@ export default function App() {
         onManageCampaignsClick={() => setIsCampaignModalOpen(true)}
         onExportCsvClick={handleExportCsv}
         taskCountByCompany={taskCountByCompany}
+        onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
+        isSupabaseConnected={isSupabaseConnected}
+        isSyncing={isSyncing}
       />
 
       {/* Main Workspace */}
@@ -500,6 +627,16 @@ export default function App() {
         onAddCampaign={handleAddCampaign}
         onDeleteCampaign={handleDeleteCampaign}
         taskCountsByCampaign={taskCountsByCampaign}
+      />
+
+      <SupabaseModal
+        isOpen={isSupabaseModalOpen}
+        onClose={() => setIsSupabaseModalOpen(false)}
+        tasks={tasks}
+        campaigns={campaigns}
+        onSyncComplete={() => {
+          setSupabaseReloadKey((prev) => prev + 1);
+        }}
       />
 
       {/* Floating Toast Notification when a task is deleted with instantaneous Undo */}

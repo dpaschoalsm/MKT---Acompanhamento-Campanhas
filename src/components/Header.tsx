@@ -8,7 +8,8 @@ import {
   Download, 
   Building2,
   Calendar,
-  Layers
+  Layers,
+  Database
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -20,6 +21,9 @@ interface HeaderProps {
   onManageCampaignsClick: () => void;
   onExportCsvClick: () => void;
   taskCountByCompany: Record<Company, number>;
+  onOpenSupabaseModal: () => void;
+  isSupabaseConnected: boolean;
+  isSyncing?: boolean;
 }
 
 const COMPANY_LOGOS: Record<Company, { src: string; fallbackSrc?: string; alt: string; className: string }> = {
@@ -52,6 +56,9 @@ export const Header: React.FC<HeaderProps> = ({
   onManageCampaignsClick,
   onExportCsvClick,
   taskCountByCompany,
+  onOpenSupabaseModal,
+  isSupabaseConnected,
+  isSyncing,
 }) => {
   const companies: Company[] = ['DPaschoal', 'DPK', 'AutoZ'];
   const activeLogo = COMPANY_LOGOS[activeCompany] || COMPANY_LOGOS.DPaschoal;
@@ -124,11 +131,35 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Action Buttons */}
           <div className="flex items-center gap-2 flex-wrap self-stretch md:self-auto">
+            {/* Supabase Status / Connect Button */}
+            <button
+              id="btn-supabase-status"
+              type="button"
+              onClick={onOpenSupabaseModal}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all shadow-2xs cursor-pointer ${
+                isSupabaseConnected
+                  ? 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                  : 'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50'
+              }`}
+              title="Configurar ou gerenciar banco Supabase para sincronização em nuvem com a equipe"
+            >
+              <Database className={`w-3.5 h-3.5 ${isSupabaseConnected ? 'text-emerald-600' : 'text-neutral-500'}`} />
+              <span className="hidden sm:inline">
+                {isSupabaseConnected ? 'Supabase Online' : 'Conectar Supabase'}
+              </span>
+              {isSupabaseConnected && (
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Sincronizado em tempo real"></span>
+              )}
+              {isSyncing && (
+                <span className="text-[10px] text-emerald-700 font-mono animate-spin" title="Sincronizando...">⟳</span>
+              )}
+            </button>
+
             <button
               id="btn-manage-campaigns"
               type="button"
               onClick={onManageCampaignsClick}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50 text-xs font-medium transition-colors shadow-2xs"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50 text-xs font-medium transition-colors shadow-2xs cursor-pointer"
               title="Adicionar ou visualizar campanhas cadastradas"
             >
               <Tag className="w-3.5 h-3.5 text-neutral-500" />
@@ -139,7 +170,7 @@ export const Header: React.FC<HeaderProps> = ({
               id="btn-export-csv"
               type="button"
               onClick={onExportCsvClick}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50 text-xs font-medium transition-colors shadow-2xs"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50 text-xs font-medium transition-colors shadow-2xs cursor-pointer"
               title="Exportar planilha para arquivo CSV/Excel"
             >
               <Download className="w-3.5 h-3.5 text-neutral-500" />
@@ -150,7 +181,7 @@ export const Header: React.FC<HeaderProps> = ({
               id="btn-add-task"
               type="button"
               onClick={onNewTaskClick}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#a60000] hover:bg-[#8f0000] text-white text-xs font-bold transition-all shadow-xs"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#a60000] hover:bg-[#8f0000] text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>Nova Tarefa</span>
