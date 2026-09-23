@@ -16,6 +16,11 @@ import {
   formatDiffDays 
 } from '../utils/dateUtils';
 import { splitMulti, joinMulti } from '../utils/multiSelectUtils';
+import { 
+  getNextTaskNumberForCampaign, 
+  getCampaignDefaultMonth, 
+  getCampaignDefaultDate 
+} from '../utils/taskSort';
 import { X, Calendar, Clock, AlertCircle, CheckCircle2, Sparkles, Plus, Check } from 'lucide-react';
 
 interface TaskModalProps {
@@ -25,6 +30,8 @@ interface TaskModalProps {
   initialTask?: Task | null;
   defaultCompany: Company;
   campaigns: string[];
+  tasks?: Task[];
+  defaultCampaign?: string;
 }
 
 export const TaskModal: React.FC<TaskModalProps> = ({
@@ -34,10 +41,12 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   initialTask,
   defaultCompany,
   campaigns,
+  tasks,
+  defaultCampaign,
 }) => {
   const [company, setCompany] = useState<Company>(defaultCompany);
-  const [campaign, setCampaign] = useState<string>(campaigns[0] || 'Revisão DPaschoal');
-  const [taskNumber, setTaskNumber] = useState<string>('1.0');
+  const [campaign, setCampaign] = useState<string>(defaultCampaign || campaigns[0] || 'Revisão DPaschoal');
+  const [taskNumber, setTaskNumber] = useState<string>('1');
   const [description, setDescription] = useState<string>('');
   
   // Multi-select state for Responsibles and Sectors
@@ -47,8 +56,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [customSec, setCustomSec] = useState<string>('');
 
   const [durationDays, setDurationDays] = useState<number>(5);
-  const [startDate, setStartDate] = useState<string>('2026-09-02');
-  const [endDate, setEndDate] = useState<string>('2026-09-06');
+  const [startDate, setStartDate] = useState<string>('2026-10-01');
+  const [endDate, setEndDate] = useState<string>('2026-10-06');
   const [completionDate, setCompletionDate] = useState<string>('');
   const [status, setStatus] = useState<TaskStatus>('Não iniciado');
   const [notes, setNotes] = useState<string>('');
@@ -66,7 +75,35 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const computedDiffDays = calculateDiffDays(completionDate, endDate);
 
   // Month calculation
-  const calculatedMonth = startDate ? getMonthAbbr(startDate) : 'Setembro/26';
+  const calculatedMonth = startDate ? getMonthAbbr(startDate) : 'Outubro/26';
+
+  // Handle campaign change with auto-suggestion
+  const handleCampaignChange = (newCamp: string) => {
+    setCampaign(newCamp);
+    if (!initialTask) {
+      const nextNum = getNextTaskNumberForCampaign(tasks || [], company, newCamp);
+      const nextMonth = getCampaignDefaultMonth(tasks || [], company, newCamp);
+      const nextDate = getCampaignDefaultDate(tasks || [], company, newCamp);
+      setTaskNumber(nextNum);
+      setCustomMonth(nextMonth);
+      setStartDate(nextDate);
+      setEndDate(calculateEndDate(nextDate, durationDays));
+    }
+  };
+
+  // Handle company change with auto-suggestion
+  const handleCompanyChange = (newComp: Company) => {
+    setCompany(newComp);
+    if (!initialTask) {
+      const nextNum = getNextTaskNumberForCampaign(tasks || [], newComp, campaign);
+      const nextMonth = getCampaignDefaultMonth(tasks || [], newComp, campaign);
+      const nextDate = getCampaignDefaultDate(tasks || [], newComp, campaign);
+      setTaskNumber(nextNum);
+      setCustomMonth(nextMonth);
+      setStartDate(nextDate);
+      setEndDate(calculateEndDate(nextDate, durationDays));
+    }
+  };
 
   // Initialize or reset form when modal opens or initialTask changes
   useEffect(() => {
@@ -94,25 +131,30 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         setNotes(initialTask.notes || '');
         setCustomMonth(initialTask.month);
       } else {
-        setCompany(defaultCompany);
-        setCampaign(campaigns[0] || 'Revisão DPaschoal');
-        setTaskNumber('1.0');
+        const targetComp = defaultCompany;
+        const targetCamp = defaultCampaign || campaigns[0] || 'Revisão DPaschoal';
+        const suggestedNum = getNextTaskNumberForCampaign(tasks || [], targetComp, targetCamp);
+        const suggestedMonth = getCampaignDefaultMonth(tasks || [], targetComp, targetCamp);
+        const suggestedDate = getCampaignDefaultDate(tasks || [], targetComp, targetCamp);
+
+        setCompany(targetComp);
+        setCampaign(targetCamp);
+        setTaskNumber(suggestedNum);
         setDescription('');
         setSelectedResponsibles([RESPONSIBLES[0]]);
         setSelectedSectors([SECTORS[0]]);
         setDurationDays(5);
-        const todayStr = '2026-09-02';
-        setStartDate(todayStr);
-        setEndDate(calculateEndDate(todayStr, 5));
+        setStartDate(suggestedDate);
+        setEndDate(calculateEndDate(suggestedDate, 5));
         setCompletionDate('');
         setStatus('Não iniciado');
         setNotes('');
-        setCustomMonth('');
+        setCustomMonth(suggestedMonth);
       }
       setCustomResp('');
       setCustomSec('');
     }
-  }, [isOpen, initialTask, defaultCompany, campaigns]);
+  }, [isOpen, initialTask, defaultCompany, defaultCampaign, campaigns, tasks]);
 
   if (!isOpen) return null;
 
@@ -227,7 +269,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               <select
                 id="modal-company"
                 value={company}
-                onChange={(e) => setCompany(e.target.value as Company)}
+                onChange={(e) => handleCompanyChange(e.target.value as Company)}
                 className="w-full text-xs py-2 px-3 bg-neutral-50 border border-neutral-300 rounded-md focus:ring-1 focus:ring-[#a60000] focus:border-[#a60000]"
                 required
               >
@@ -244,7 +286,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               <select
                 id="modal-campaign"
                 value={campaign}
-                onChange={(e) => setCampaign(e.target.value)}
+                onChange={(e) => handleCampaignChange(e.target.value)}
                 className="w-full text-xs py-2 px-3 bg-neutral-50 border border-neutral-300 rounded-md focus:ring-1 focus:ring-[#a60000] focus:border-[#a60000]"
                 required
               >
@@ -260,24 +302,36 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           {/* Row 2: Nº da Tarefa & Mês */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label htmlFor="modal-task-number" className="block text-xs font-bold text-neutral-700 mb-1">
-                Nº Tarefa *
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label htmlFor="modal-task-number" className="block text-xs font-bold text-neutral-700">
+                  Nº Tarefa *
+                </label>
+                {!initialTask && (
+                  <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200" title="Próximo número calculado automaticamente">
+                    Sugerido: {taskNumber}
+                  </span>
+                )}
+              </div>
               <input
                 id="modal-task-number"
                 type="text"
-                placeholder="Ex: 1.0, 1.1"
+                placeholder={taskNumber || 'Ex: 17'}
                 value={taskNumber}
                 onChange={(e) => setTaskNumber(e.target.value)}
-                className="w-full text-xs py-2 px-3 bg-neutral-50 border border-neutral-300 rounded-md focus:ring-1 focus:ring-[#a60000] focus:border-[#a60000]"
+                className="w-full text-xs py-2 px-3 bg-neutral-50 border border-neutral-300 rounded-md focus:ring-1 focus:ring-[#a60000] focus:border-[#a60000] font-bold"
                 required
               />
             </div>
 
             <div>
-              <label htmlFor="modal-month" className="block text-xs font-bold text-neutral-700 mb-1">
-                Mês (ex: Setembro/26)
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label htmlFor="modal-month" className="block text-xs font-bold text-neutral-700">
+                  Mês
+                </label>
+                <span className="text-[10px] text-neutral-400">
+                  {customMonth || calculatedMonth}
+                </span>
+              </div>
               <input
                 id="modal-month"
                 type="text"

@@ -1,5 +1,5 @@
 import { Task } from '../types';
-import { compareMonthsChronological } from './monthUtils';
+import { parseMonthToNumber } from './monthUtils';
 
 /**
  * Extracts numeric sequence from taskNumber, e.g.:
@@ -75,27 +75,124 @@ export function extractIdNumber(id?: string): number {
 }
 
 /**
+ * Computes the next suggested task number for a given company and campaign.
+ * Finds the maximum root number among existing tasks in that campaign and returns max + 1.
+ * Example: if Revisão DPaschoal has tasks up to 16, returns '17'.
+ */
+export function getNextTaskNumberForCampaign(tasks: Task[], company: string, campaign: string): string {
+  const matching = tasks.filter(
+    (t) => (!company || t.company === company) && t.campaign === campaign
+  );
+  if (matching.length === 0) return '1';
+
+  let maxRoot = 0;
+  for (const t of matching) {
+    const m = String(t.taskNumber || '').trim().match(/^(\d+)/);
+    if (m) {
+      const val = parseInt(m[1], 10);
+      if (!isNaN(val) && val > maxRoot) {
+        maxRoot = val;
+      }
+    }
+  }
+
+  return String(maxRoot + 1);
+}
+
+/**
+ * Gets the predominant month for a company's campaign (e.g. 'Outubro/26' for Revisão DPaschoal).
+ */
+export function getCampaignDefaultMonth(tasks: Task[], company: string, campaign: string): string {
+  const matching = tasks.filter(
+    (t) => (!company || t.company === company) && t.campaign === campaign
+  );
+  if (matching.length === 0) return 'Outubro/26';
+
+  const counts = new Map<string, number>();
+  for (const t of matching) {
+    if (t.month) {
+      counts.set(t.month, (counts.get(t.month) || 0) + 1);
+    }
+  }
+
+  let topMonth = 'Outubro/26';
+  let maxCount = 0;
+  for (const [m, count] of counts.entries()) {
+    if (count > maxCount) {
+      maxCount = count;
+      topMonth = m;
+    }
+  }
+
+  return topMonth;
+}
+
+/**
+ * Gets a suggested start date for a newly created task in a company and campaign.
+ */
+export function getCampaignDefaultDate(tasks: Task[], company: string, campaign: string): string {
+  const matching = tasks.filter(
+    (t) => (!company || t.company === company) && t.campaign === campaign
+  );
+  if (matching.length > 0) {
+    const validDates = matching
+      .map((t) => t.startDate)
+      .filter((d) => Boolean(d) && /^\d{4}-\d{2}-\d{2}$/.test(d))
+      .sort();
+    if (validDates.length > 0) {
+      return validDates[validDates.length - 1];
+    }
+  }
+
+  // Derive from month if possible
+  const monthStr = getCampaignDefaultMonth(tasks, company, campaign);
+  const mNum = parseMonthToNumber(monthStr);
+  if (mNum > 200000) {
+    const year = Math.floor(mNum / 100);
+    const month = mNum % 100;
+    return `${year}-${String(month).padStart(2, '0')}-01`;
+  }
+
+  return '2026-10-01';
+}
+
+/**
  * Sorts tasks in canonical order:
  * 1. Company (DPaschoal, DPK, AutoZ)
- * 2. Month (Chronological calendar order: Setembro/26 < Outubro/26 < Novembro/26 < Dezembro/26)
- * 3. Campaign (respecting campaign order if provided or alphabetical)
- * 4. Natural Task Number (1, 2, 2.1, 2.2, 3, ..., 9, 10, 16)
- * 5. Start Date (chronological)
- * 6. ID Number (e.g. dp-1 < dp-2 < dp-10)
+ * 2. Campaign (Chronological order of campaign timeline: e.g. Outubro/26 < Novembro/26 < Dezembro/26)
+ * 3. Natural Task Number (1, 2, 2.1, 2.2, 3, ..., 9, 10, 15.6, 16, 17)
+ * 4. Start Date (chronological)
+ * 5. ID Number (e.g. dp-1 < dp-2 < dp-10)
  */
 export function sortTasks(tasks: Task[], campaignsOrder?: string[]): Task[] {
+  // Precompute earliest chronological month number per company + campaign
+  const compCampMonthMap = new Map<string, number>();
+  for (const t of tasks) {
+    const key = `${t.company}:::${t.campaign}`;
+    const mNum = parseMonthToNumber(t.month, t.startDate);
+    const existing = compCampMonthMap.get(key);
+    if (existing === undefined || mNum < existing) {
+      compCampMonthMap.set(key, mNum);
+    }
+  }
+
   return [...tasks].sort((a, b) => {
     // 1. Company
     if (a.company !== b.company) {
       return String(a.company).localeCompare(String(b.company));
     }
 
-    // 2. Month (Strictly chronological: Outubro/26 < Novembro/26 < Dezembro/26)
-    const monthComp = compareMonthsChronological(a.month, b.month, a.startDate, b.startDate);
-    if (monthComp !== 0) return monthComp;
-
-    // 3. Campaign
+    // 2. Campaign (Chronological order of campaign timeline)
     if (a.campaign !== b.campaign) {
+      const keyA = `${a.company}:::${a.campaign}`;
+      const keyB = `${b.company}:::${b.campaign}`;
+      const monthA = compCampMonthMap.get(keyA) || 0;
+      const monthB = compCampMonthMap.get(keyB) || 0;
+
+      if (monthA !== monthB) {
+        return monthA - monthB;
+      }
+
       if (campaignsOrder && campaignsOrder.length > 0) {
         const idxA = campaignsOrder.indexOf(a.campaign);
         const idxB = campaignsOrder.indexOf(b.campaign);
@@ -107,20 +204,21 @@ export function sortTasks(tasks: Task[], campaignsOrder?: string[]): Task[] {
           return 1;
         }
       }
+
       const campComp = String(a.campaign).localeCompare(String(b.campaign));
       if (campComp !== 0) return campComp;
     }
 
-    // 4. Task Number (natural hierarchical order)
+    // 3. Task Number (natural hierarchical order inside the campaign: 1, 2, 2.1 ... 16, 17)
     const numComp = compareTaskNumbers(a.taskNumber, b.taskNumber);
     if (numComp !== 0) return numComp;
 
-    // 5. Start Date (chronological)
+    // 4. Start Date (chronological)
     if (a.startDate && b.startDate && a.startDate !== b.startDate) {
       return a.startDate.localeCompare(b.startDate);
     }
 
-    // 6. ID Number (e.g. dp-1 < dp-2 < dp-10)
+    // 5. ID Number (e.g. dp-1 < dp-2 < dp-10)
     const idA = extractIdNumber(a.id);
     const idB = extractIdNumber(b.id);
     if (idA !== idB) return idA - idB;

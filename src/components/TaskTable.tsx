@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Task, 
   TaskStatus, 
@@ -28,7 +28,12 @@ import {
   ArrowDown
 } from 'lucide-react';
 import { getHierarchyRenderItems } from '../utils/taskHierarchy';
-import { compareTaskNumbers } from '../utils/taskSort';
+import { 
+  compareTaskNumbers, 
+  getNextTaskNumberForCampaign, 
+  getCampaignDefaultMonth, 
+  getCampaignDefaultDate 
+} from '../utils/taskSort';
 import { compareMonthsChronological } from '../utils/monthUtils';
 
 interface TaskTableProps {
@@ -150,7 +155,9 @@ export const TaskTable: React.FC<TaskTableProps> = ({
   const defaultCampaign = campaigns[0] || 'Revisão DPaschoal';
   const defaultResponsible: Responsible = RESPONSIBLES[0] || 'Rafael';
   const defaultSector: Sector = SECTORS[0] || 'Brand';
-  const todayIso = toISOFormat(new Date());
+  const initialSuggestedNumber = getNextTaskNumberForCampaign(tasks, activeCompany, defaultCampaign);
+  const initialSuggestedMonth = getCampaignDefaultMonth(tasks, activeCompany, defaultCampaign);
+  const initialSuggestedDate = getCampaignDefaultDate(tasks, activeCompany, defaultCampaign);
 
   const [newRowDraft, setNewRowDraft] = useState<{
     month: string;
@@ -164,17 +171,54 @@ export const TaskTable: React.FC<TaskTableProps> = ({
     completionDate: string;
     status: TaskStatus;
   }>({
-    month: getMonthAbbr(todayIso) || 'Setembro/26',
-    taskNumber: '',
+    month: initialSuggestedMonth,
+    taskNumber: initialSuggestedNumber,
     description: '',
     campaign: defaultCampaign,
     responsible: defaultResponsible,
     sector: defaultSector,
     durationDays: 45,
-    startDate: todayIso,
+    startDate: initialSuggestedDate,
     completionDate: '',
     status: 'Não iniciado',
   });
+
+  // Handle quick add campaign change: automatically suggest next taskNumber, month, and date
+  const handleQuickAddCampaignChange = (newCamp: string) => {
+    const nextNum = getNextTaskNumberForCampaign(tasks, activeCompany, newCamp);
+    const nextMonth = getCampaignDefaultMonth(tasks, activeCompany, newCamp);
+    const nextDate = getCampaignDefaultDate(tasks, activeCompany, newCamp);
+    setNewRowDraft((prev) => ({
+      ...prev,
+      campaign: newCamp,
+      taskNumber: nextNum,
+      month: nextMonth,
+      startDate: nextDate,
+    }));
+  };
+
+  // Keep draft in sync when activeCompany, campaigns or tasks change (if description is empty)
+  useEffect(() => {
+    const currentCamp = newRowDraft.campaign && campaigns.includes(newRowDraft.campaign)
+      ? newRowDraft.campaign
+      : (campaigns[0] || 'Revisão DPaschoal');
+    const nextNum = getNextTaskNumberForCampaign(tasks, activeCompany, currentCamp);
+    const nextMonth = getCampaignDefaultMonth(tasks, activeCompany, currentCamp);
+    const nextDate = getCampaignDefaultDate(tasks, activeCompany, currentCamp);
+
+    setNewRowDraft((prev) => {
+      if (!prev.description.trim()) {
+        return {
+          ...prev,
+          campaign: currentCamp,
+          taskNumber: nextNum,
+          month: nextMonth,
+          startDate: nextDate,
+        };
+      }
+      return prev;
+    });
+  }, [activeCompany, campaigns, tasks]);
 
   // Status badge styling helper
   const getStatusBadgeStyle = (status: TaskStatus) => {
@@ -276,18 +320,22 @@ export const TaskTable: React.FC<TaskTableProps> = ({
       return;
     }
 
+    const currentCampaign = newRowDraft.campaign || defaultCampaign;
     const duration = Math.max(1, typeof newRowDraft.durationDays === 'number' ? newRowDraft.durationDays : parseInt(String(newRowDraft.durationDays).replace(/\D/g, ''), 10) || 5);
-    const startDate = newRowDraft.startDate || todayIso;
+    const startDate = newRowDraft.startDate || getCampaignDefaultDate(tasks, activeCompany, currentCampaign);
     const endDate = calculateEndDate(startDate, duration);
-    const month = newRowDraft.month?.trim() || getMonthAbbr(startDate) || 'Outubro/26';
+    const defaultMonth = getCampaignDefaultMonth(tasks, activeCompany, currentCampaign);
+    const month = newRowDraft.month?.trim() || defaultMonth;
+    const suggestedNum = getNextTaskNumberForCampaign(tasks, activeCompany, currentCampaign);
+    const taskNumber = newRowDraft.taskNumber.trim() || suggestedNum;
     const completionDate = newRowDraft.completionDate || '';
     const diffDays = completionDate ? calculateDiffDays(completionDate, endDate) : null;
 
     onAddNewTask({
       company: activeCompany as any,
       month,
-      campaign: newRowDraft.campaign || defaultCampaign,
-      taskNumber: newRowDraft.taskNumber.trim() || `${tasks.length + 1}.0`,
+      campaign: currentCampaign,
+      taskNumber,
       description: newRowDraft.description.trim() || 'Nova tarefa',
       responsible: newRowDraft.responsible || defaultResponsible,
       sector: newRowDraft.sector || defaultSector,
@@ -300,16 +348,18 @@ export const TaskTable: React.FC<TaskTableProps> = ({
     });
 
     // Reset draft with next task number automatically
-    const nextNum = tasks.length + 2;
+    const nextRoot = parseInt(taskNumber.match(/^(\d+)/)?.[1] || '0', 10) + 1;
+    const nextSuggestedNum = String(nextRoot);
+
     setNewRowDraft({
       month: month,
-      taskNumber: `${nextNum}.0`,
+      taskNumber: nextSuggestedNum,
       description: '',
-      campaign: newRowDraft.campaign || defaultCampaign,
+      campaign: currentCampaign,
       responsible: newRowDraft.responsible || defaultResponsible,
       sector: newRowDraft.sector || defaultSector,
-      durationDays: 45,
-      startDate: todayIso,
+      durationDays: duration,
+      startDate: startDate,
       completionDate: '',
       status: 'Não iniciado',
     });
@@ -861,7 +911,7 @@ export const TaskTable: React.FC<TaskTableProps> = ({
             <td className="py-2 px-2 border-r border-neutral-200 text-center">
               <select
                 value={newRowDraft.campaign}
-                onChange={(e) => setNewRowDraft({ ...newRowDraft, campaign: e.target.value })}
+                onChange={(e) => handleQuickAddCampaignChange(e.target.value)}
                 className="w-full text-xs font-semibold bg-white/80 border border-neutral-300 hover:border-emerald-500 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-emerald-500"
               >
                 {campaigns.map((c) => (
@@ -874,11 +924,12 @@ export const TaskTable: React.FC<TaskTableProps> = ({
             <td className="py-2 px-1.5 border-r border-neutral-200 text-center">
               <input
                 type="text"
-                placeholder={`${tasks.length + 1}.0`}
+                placeholder={getNextTaskNumberForCampaign(tasks, activeCompany, newRowDraft.campaign || defaultCampaign)}
                 value={newRowDraft.taskNumber}
                 onChange={(e) => setNewRowDraft({ ...newRowDraft, taskNumber: e.target.value })}
                 onKeyDown={handleNewRowKeyDown}
                 className="w-full text-center px-1 py-0.5 text-xs font-bold bg-white/80 border border-neutral-300 hover:border-emerald-500 rounded focus:outline-none focus:ring-1 focus:ring-emerald-500 placeholder-neutral-400"
+                title={`Sugerido: ${getNextTaskNumberForCampaign(tasks, activeCompany, newRowDraft.campaign || defaultCampaign)}`}
               />
             </td>
 

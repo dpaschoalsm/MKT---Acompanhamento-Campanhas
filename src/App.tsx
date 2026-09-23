@@ -625,6 +625,8 @@ export default function App() {
         initialTask={editingTask}
         defaultCompany={activeCompany}
         campaigns={campaigns}
+        tasks={tasks}
+        defaultCampaign={filters.campaign || campaigns[0]}
       />
 
       <CampaignManagerModal
